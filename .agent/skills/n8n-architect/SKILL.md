@@ -12,11 +12,13 @@ Use this skill when the user asks for a new n8n automation or workflow.
 You must follow these 4 phases strictly to ensure the workflow is valid.
 
 ### Phase 1: Discovery & Research
-1.  **Identify Nodes:** Break the user's request into necessary steps (e.g., "Receive Webhook" -> "Process Data" -> "Send to Slack").
-2.  **Find Schemas:** For *each* identified step, run the helper script to find the correct node definition:
-    `node .agent/skills/n8n-architect/scripts/find_node.js "<search_term>"`
-3.  **Read Definitions:** Read the content of the found JSON files from `.agent/knowledge/n8n/<NodeName>.json`.
-    * *Critical:* Pay attention to the `inputs`, `outputs`, and required `parameters`.
+1.  **Identify Nodes:** Break the user's request into necessary steps.
+2.  **Find Schemas:** Run the helper script using natural language keywords (e.g., "google sheets" or "postgres trigger"):
+    `node .agent/skills/n8n-architect/scripts/find_node.js "<search_terms>"`
+3.  **Select Best Match:** The script returns the top 5 matches sorted by relevance. 
+    * Review the `displayName` and `description` in the JSON output.
+    * Select the node that best fits the user's intent (e.g., choose `GoogleSheets` over `GoogleDrive` if the user asked for "spreadsheet").
+4.  **Read Definitions:** Read the content of the selected JSON file from `.agent/knowledge/n8n/<filename>`.
 
 ### Phase 2: Configuration Planning
 Before writing code, draft the node configurations in your scratchpad:
