@@ -24,35 +24,35 @@ async function extract() {
             if (NodeConstructor && NodeConstructor.prototype) {
                 const instance = new NodeConstructor();
 
-                // 1. Get the Base Description
+                // 1. Get Base Description
                 let description = instance.description;
-
-                // SKIP if no description found
                 if (!description) continue;
 
-                // 2. HANDLE VERSIONED NODES (The Fix)
-                // If this is a "Shell" node (has versions but no properties), we must resolve the default version.
+                // 2. HANDLE VERSIONED NODES (FIXED)
                 if (instance.nodeVersions && description.defaultVersion) {
-                    const versionKey = description.defaultVersion;
-                    const versionData = instance.nodeVersions[versionKey];
+                    const rawVersion = description.defaultVersion;
+
+                    // FIX: Try exact match first, then try the integer (Major) version
+                    // e.g. If defaultVersion is 2.4, look for key "2.4", then key "2"
+                    let versionData = instance.nodeVersions[rawVersion];
+                    if (!versionData) {
+                        versionData = instance.nodeVersions[Math.floor(rawVersion)];
+                    }
 
                     if (versionData) {
-                        // Instantiate the specific version to get its properties
                         const VersionConstructor = versionData.default || versionData;
                         const versionInstance = new VersionConstructor();
 
-                        // Merge the version's description onto the base description
-                        // This fills in 'properties', 'displayName', etc.
+                        // Merge properties
                         description = {
                             ...description,
                             ...versionInstance.description,
-                            // Ensure the name remains the stable identifier (e.g. "slack")
-                            name: description.name
+                            name: description.name // Keep the original shell name
                         };
                     }
                 }
 
-                // 3. Save only if we have properties (avoid saving empty shells)
+                // 3. Save
                 if (description.properties) {
                     const filename = `${description.name}.json`;
                     fs.writeFileSync(
@@ -63,7 +63,7 @@ async function extract() {
                 }
             }
         } catch (e) {
-            // Ignore errors (some internal utility files might fail to load)
+            // console.error(`Failed ${file}: ${e.message}`);
         }
     }
 
