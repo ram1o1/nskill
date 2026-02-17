@@ -1,0 +1,21 @@
+# --- Node.js Standard ---
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+.env
+
+# --- Google Antigravity (Agent) ---
+# Keep the skills, but ignore the generated data
+.agent/knowledge/
+.agent/sessions/
+.agent/temp/
+
+# --- n8n-extractor Artifacts ---
+# Ignore the temporary build folder used during extraction
+.n8n-temp-build/
+temp_knowledge/
+
+# --- OS System Files ---
+.DS_Store
+Thumbs.db
