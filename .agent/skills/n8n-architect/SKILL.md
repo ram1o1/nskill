@@ -20,20 +20,12 @@ You must follow these 4 phases strictly to ensure the workflow is valid.
     * Select the node that best fits the user's intent (e.g., choose `GoogleSheets` over `GoogleDrive` if the user asked for "spreadsheet").
 4.  **Read Definitions:** Read the content of the selected JSON file from `.agent/knowledge/n8n/<filename>`.
 
-### Phase 2: Configuration & Interrogation
-Before generating JSON, you must validate that you have the necessary data to configure the nodes.
-
-1.  **Inspect Requirements:** For every key node in the plan, run:
-    `node .agent/skills/n8n-architect/scripts/inspect_node.js <filename>`
-2.  **Analyze & Ask (The "Human-in-the-Loop" Step):**
-    Review the output from the inspection script.
-    * **Credentials:** If the node requires credentials (e.g., `googleSheetsOAuth2`), **DO NOT** ask the user for keys/passwords. Instead, plan to leave a "sticky note" or comment in the final response reminding them to set it up in the UI.
-    * **Required Inputs:** Look for parameters where `required: true` and you do not have the value in the chat history.
-        * *Example:* If `operation` is "getAll" and `limit` is required but unknown, you must ASK.
-    * **Contextual Inputs:** Use the `displayOptions` logic to ask smart questions.
-        * *Bad Question:* "What is the Raw Data?" (When the user just wants a simple lookup).
-        * *Good Question:* "I see you want to read a Google Sheet. Do you have the 'Spreadsheet ID' handy, or should I leave that blank for you to fill later?"
-3.  **Stop & Confirm:** If you are missing critical "Required" fields, **STOP** the generation process. Ask the user for the missing details. Only proceed to Phase 3 once you have the data or the user tells you to use placeholders.
+### Phase 2: Configuration & Strategy
+1.  **Inspect Nodes:** Run `inspect_node.js` for key nodes to identify required parameters.
+2.  **Handle Missing Data (Eager Mode):**
+    * If a required field (like an ID or API Key) is missing, **DO NOT STOP**.
+    * Instead, insert a clear, uppercase placeholder string (e.g., `INSERT_SPREADSHEET_ID`, `YOUR_SLACK_CHANNEL`).
+    * **Logic Check:** Only stop and ask questions if the *logic* of the workflow is ambiguous (e.g., "Did you mean to send this to Slack or Email?").
 
 ### Phase 3: Assembly (The JSON Construction)
 1.  Read the template at `.agent/skills/n8n-architect/templates/workflow.json`.

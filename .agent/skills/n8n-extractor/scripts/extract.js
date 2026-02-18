@@ -3,72 +3,157 @@ const fs = require('fs');
 const path = require('path');
 const { glob } = require('glob');
 
-async function extract() {
-    const outputDir = path.resolve(process.cwd(), 'temp_knowledge');
-    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+// --- CONFIGURATION ---
+// We use process.cwd() to ensure it runs from the workspace root
+const NODES_BASE_PATH = path.resolve(process.cwd(), 'node_modules/n8n-nodes-base/dist/nodes');
+const OUTPUT_DIR = path.resolve(process.cwd(), 'temp_knowledge');
 
-    console.log('Searching for node definitions in n8n-nodes-base...');
-    const nodesPath = path.resolve(process.cwd(), 'node_modules/n8n-nodes-base/dist/nodes/**/*.node.js');
-    const nodeFiles = await glob(nodesPath);
+if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+}
 
-    console.log(`Found ${nodeFiles.length} node files. Extracting schemas...`);
+async function extractNodes() {
+    console.log(`Scanning for nodes in: ${NODES_BASE_PATH}`);
 
-    let count = 0;
-    const version = require(path.resolve(process.cwd(), 'node_modules/n8n-nodes-base/package.json')).version;
+    // 1. Find all .node.js files
+    // Using glob to recursively find all node definitions
+    const files = await glob('**/*.node.js', { cwd: NODES_BASE_PATH, absolute: true });
+    console.log(`Found ${files.length} node definition files.`);
 
-    for (const file of nodeFiles) {
+    let successCount = 0;
+    let failCount = 0;
+    const skippedFiles = [];
+
+    // Attempt to get n8n version for metadata
+    let n8nVersion = 'unknown';
+    try {
+        n8nVersion = require(path.resolve(process.cwd(), 'node_modules/n8n-nodes-base/package.json')).version;
+    } catch (e) { }
+
+    for (const file of files) {
         try {
-            const NodeClass = require(file);
-            const NodeConstructor = NodeClass.default || Object.values(NodeClass)[0];
+            // 2. Dynamic Require
+            let nodeModule;
+            try {
+                nodeModule = require(file);
+            } catch (e) {
+                skippedFiles.push({ file, reason: `Require failed: ${e.message}` });
+                failCount++;
+                continue;
+            }
 
-            if (NodeConstructor && NodeConstructor.prototype) {
-                const instance = new NodeConstructor();
+            // 3. Find the Exported Class
+            // We iterate all exports to find one that looks like an n8n Node
+            let NodeClass = null;
+            let NodeConstructor = null;
 
-                // 1. Get Base Description
-                let description = instance.description;
-                if (!description) continue;
+            // Priority: Check 'default' export first, then others
+            const exportsToCheck = [nodeModule.default, ...Object.values(nodeModule)].filter(Boolean);
 
-                // 2. HANDLE VERSIONED NODES (FIXED)
-                if (instance.nodeVersions && description.defaultVersion) {
-                    const rawVersion = description.defaultVersion;
-
-                    // FIX: Try exact match first, then try the integer (Major) version
-                    // e.g. If defaultVersion is 2.4, look for key "2.4", then key "2"
-                    let versionData = instance.nodeVersions[rawVersion];
-                    if (!versionData) {
-                        versionData = instance.nodeVersions[Math.floor(rawVersion)];
+            for (const exportedItem of exportsToCheck) {
+                try {
+                    // Check if it's a class/function we can instantiate
+                    if (typeof exportedItem === 'function' && exportedItem.prototype) {
+                        const testInstance = new exportedItem();
+                        // It's a match if it has a 'description' property
+                        if (testInstance.description) {
+                            NodeClass = testInstance; // The instance
+                            NodeConstructor = exportedItem; // The class
+                            break;
+                        }
                     }
-
-                    if (versionData) {
-                        const VersionConstructor = versionData.default || versionData;
-                        const versionInstance = new VersionConstructor();
-
-                        // Merge properties
-                        description = {
-                            ...description,
-                            ...versionInstance.description,
-                            name: description.name // Keep the original shell name
-                        };
-                    }
-                }
-
-                // 3. Save
-                if (description.properties) {
-                    const filename = `${description.name}.json`;
-                    fs.writeFileSync(
-                        path.join(outputDir, filename),
-                        JSON.stringify(description, null, 2)
-                    );
-                    count++;
+                } catch (e) {
+                    // Ignore instantiation errors for non-node exports
                 }
             }
-        } catch (e) {
-            // console.error(`Failed ${file}: ${e.message}`);
+
+            if (NodeClass) {
+                // 4. EXTRACT SCHEMAS (With Version Logic)
+                let description = NodeClass.description;
+
+                // --- LOGIC INSERT: Handle Versioned Nodes (e.g., Slack) ---
+                if (NodeClass.nodeVersions && description.defaultVersion) {
+                    const rawVersion = description.defaultVersion;
+
+                    // Try to find the version data (Key might be integer "1" or string "1")
+                    let versionData = NodeClass.nodeVersions[rawVersion]
+                        || NodeClass.nodeVersions[Math.floor(rawVersion)]
+                        || NodeClass.nodeVersions[String(rawVersion)];
+
+                    if (versionData) {
+                        let versionInstance;
+
+                        // Case A: versionData is a Constructor (Class)
+                        if (typeof versionData === 'function') {
+                            versionInstance = new versionData(description);
+                        }
+                        // Case B: versionData is already an Instance (Object)
+                        else {
+                            // Check if it's a module with a default export
+                            const potentialInstance = versionData.default || versionData;
+                            if (typeof potentialInstance === 'function') {
+                                versionInstance = new potentialInstance(description);
+                            } else {
+                                versionInstance = potentialInstance;
+                            }
+                        }
+
+                        // Merge the specific version properties onto the base description
+                        if (versionInstance && versionInstance.description) {
+                            description = {
+                                ...description,
+                                ...versionInstance.description,
+                                name: description.name // Preserve the original system name
+                            };
+                        }
+                    }
+                }
+                // -----------------------------------------------------------
+
+                // 5. Save Logic
+                // We prioritize the file name, then displayName
+                let nodeName = description.name;
+                if (!nodeName) nodeName = description.displayName;
+
+                if (nodeName && description.properties) {
+                    // Clean filename
+                    const safeName = nodeName.replace(/[^a-zA-Z0-9-]/g, '');
+                    const outputFilename = path.join(OUTPUT_DIR, `${safeName}.json`);
+
+                    fs.writeFileSync(outputFilename, JSON.stringify(description, null, 2));
+                    successCount++;
+                } else {
+                    skippedFiles.push({ file, reason: 'Missing name or properties in schema' });
+                    failCount++;
+                }
+
+            } else {
+                skippedFiles.push({ file, reason: 'No valid Node Class found in exports' });
+                failCount++;
+            }
+
+        } catch (error) {
+            skippedFiles.push({ file, reason: `Processing Error: ${error.message}` });
+            failCount++;
         }
     }
 
-    fs.writeFileSync(path.join(outputDir, 'version.json'), JSON.stringify({ version, generatedAt: new Date().toISOString() }, null, 2));
-    console.log(`Successfully extracted ${count} node schemas to ./temp_knowledge`);
+    // 6. Final Summary
+    fs.writeFileSync(path.join(OUTPUT_DIR, 'version.json'), JSON.stringify({ version: n8nVersion, generatedAt: new Date().toISOString() }, null, 2));
+
+    console.log("\n--- Extraction Summary ---");
+    console.log(`Total files scanned: ${files.length}`);
+    console.log(`Successfully extracted: ${successCount}`);
+    console.log(`Failed/Skipped: ${failCount}`);
+
+    if (failCount > 0) {
+        console.log("\nTop 5 Skipped Files (sample):");
+        skippedFiles.slice(0, 5).forEach(item => {
+            console.log(`- ${path.basename(item.file)}: ${item.reason}`);
+        });
+        if (skippedFiles.length > 5) console.log(`... and ${skippedFiles.length - 5} more.`);
+    }
+    console.log("--------------------------");
 }
 
-extract();
+extractNodes();

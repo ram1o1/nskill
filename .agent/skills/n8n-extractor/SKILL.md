@@ -17,8 +17,8 @@ This skill generates a complete JSON schema reference for all standard n8n nodes
 Follow this **exact** procedure to ensure a clean environment:
 
 1. **Prepare Temporary Workspace**
-   - Create a temporary folder named `.n8n-temp-build` in the workspace root.
-   - Inside `.n8n-temp-build`, run `npm init -y`.
+   - Create a temporary folder named `n8n-temp-build` in the workspace root.
+   - Inside `n8n-temp-build`, run `npm init -y`.
 
 2. **Install Dependencies**
    - Install the source of truth and required runtimes: 
@@ -27,15 +27,15 @@ Follow this **exact** procedure to ensure a clean environment:
 
 3. **Run Extraction Script**
    - Locate the extraction script at: `.agent/skills/n8n-extractor/scripts/extract.js`.
-   - Copy this script into `.n8n-temp-build/extract.js`.
+   - Copy this script into `n8n-temp-build/extract.js`.
    - Run the script: `node extract.js`.
-   - *Result: This will create a `temp_knowledge` folder inside `.n8n-temp-build`.*
+   - *Result: This will create a `temp_knowledge` folder inside `n8n-temp-build`.*
 
 4. **Deploy Knowledge Base**
    - Ensure the destination folder exists: `.agent/knowledge/n8n/`.
-   - **Move** all JSON files from `.n8n-temp-build/temp_knowledge/` to `.agent/knowledge/n8n/`.
+   - **Move** all JSON files from `n8n-temp-build/temp_knowledge/` to `.agent/knowledge/n8n/`.
    - Verify that `version.json` is present in the destination.
 
 5. **Cleanup**
-   - Delete the `.n8n-temp-build` folder entirely.
+   - Delete the `n8n-temp-build` folder entirely.
    - Report success and the number of nodes extracted.
