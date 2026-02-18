@@ -10,7 +10,7 @@ package-lock.json
 .agent/knowledge/
 .agent/sessions/
 .agent/temp/
-
+output/
 # --- n8n-extractor Artifacts ---
 # Ignore the temporary build folder used during extraction
 .n8n-temp-build/
